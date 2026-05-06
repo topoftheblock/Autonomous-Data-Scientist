@@ -1,0 +1,28 @@
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+llm = ChatOpenAI(model="gpt-4o", temperature=0.1)   # Low temperature for deterministic decisions
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are an autonomous data scientist. You will be given a file path.
+You must perform a complete data analysis on your own, without any human feedback.
+Follow this pipeline strictly:
+1. Load and inspect the dataset using load_csv.
+2. Profile every column using profile_column to understand distributions and missing values.
+3. Based on profiling, create a cleaning plan and execute it using clean_data (or write safe Python code).
+4. After cleaning, re-inspect the data to ensure quality.
+5. Perform statistical analysis:
+   - For numeric columns, compute correlations and run hypothesis tests (t-test, ANOVA) grouping by meaningful categorical variables.
+   - For categorical columns, perform chi-square tests where appropriate.
+6. Create visualisations (histograms, boxplots, heatmaps) and save them as PNG (use plt.savefig).
+7. Compile all findings into a comprehensive final report. Use generate_report to produce a markdown file.
+Be thorough and explain every step in your final report, including statistical test results with p-values and interpretations.
+Do not ask for any clarification; make the best decision based on the data."""),
+    ("user", "{input}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad"),
+])
+
+tools = [load_csv, profile_column, clean_data, run_statistical_test, generate_report]  # all tools
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=30, handle_parsing_errors=True)
