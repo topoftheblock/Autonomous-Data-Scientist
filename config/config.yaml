@@ -1,0 +1,42 @@
+# config/config.yaml
+# Configuration for the Autonomous Data Science Agent.
+# Environment variables override these values.
+
+# ---- LLM Settings -----------------------------------------------------------
+llm:
+  model: "gpt-4o"                 # OpenAI model name (gpt-4o, gpt-4o-mini, etc.)
+  temperature: 0.0               # 0.0 = deterministic, higher = more creative
+  # For self‑hosted / other providers, set `base_url` (e.g., "http://localhost:11434/v1")
+  base_url: ""                   
+
+# ---- Agent Limits ------------------------------------------------------------
+agent:
+  recursion_limit: 30            # Max number of LangGraph steps
+  max_executor_iterations: 10    # Max tool calls per step execution
+
+# ---- Sandbox Settings --------------------------------------------------------
+sandbox:
+  mode: "restrictedpython"       # "restrictedpython" (default) or "docker"
+  timeout: 30                    # seconds before arbitrary code is killed
+  allowed_modules:               # modules available inside the sandbox
+    - pandas
+    - numpy
+    - scipy
+    - sklearn
+    - matplotlib
+    - seaborn
+    - json
+    - csv
+    - datetime
+    - math
+    - statistics
+
+# ---- Paths -------------------------------------------------------------------
+paths:
+  input_dir: "data/input"        # where to look for input CSVs
+  output_dir: "data/output"      # reports and plots saved here
+
+# ---- Logging -----------------------------------------------------------------
+logging:
+  level: "INFO"                  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
