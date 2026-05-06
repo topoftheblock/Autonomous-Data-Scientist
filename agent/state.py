@@ -26,3 +26,7 @@ class AgentState(TypedDict):
     
     # Final output
     final_report: str                  # Markdown report content
+    statistical_tests: Annotated[List[dict], operator.add]   # append‑only list
+    plot_paths: Annotated[List[str], operator.add]
+    correlation_matrix: Optional[dict]
+    cleaning_summary: Optional[dict]
