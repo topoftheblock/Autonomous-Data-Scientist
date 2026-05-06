@@ -1,0 +1,27 @@
+# requirements.txt
+# Core dependencies for the Autonomous Data Science Agent
+
+# LLM & Agent framework
+langchain>=0.2.0
+langchain-openai>=0.1.0
+langgraph>=0.1.0
+
+# Data science stack
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Sandbox (optional but recommended for arbitrary code execution)
+RestrictedPython>=7.0
+
+# Environment & configuration
+python-dotenv>=1.0.0
+pyyaml>=6.0  # for config.yaml
+
+# OpenAI API (langchain-openai will pull it, but explicit prevents surprises)
+openai>=1.0.0
