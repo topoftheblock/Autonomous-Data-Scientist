@@ -1,6 +1,27 @@
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+# --- 1. Add the missing LLM and State imports ---
+from langchain_openai import ChatOpenAI
+from agent.state import AgentState
+
+# --- 2. Import all the tools the agent needs ---
+from agent.tools.io_tools import load_csv, get_data_summary, save_dataframe, reload_dataframe
+from agent.tools.profiling import profile_column, profile_all_columns, missing_summary
+from agent.tools.cleaning import clean_data, get_cleaning_recommendations
+from agent.tools.statistics import run_statistical_test, correlation_matrix, linear_regression
+from agent.tools.visualization import plot_histogram, plot_boxplot, plot_scatter, plot_correlation_heatmap, plot_barplot, create_analysis_plots
+from agent.tools.sandbox import execute_python
+
+# --- 3. Combine them into the 'tools' list ---
+tools = [
+    load_csv, get_data_summary, save_dataframe, reload_dataframe,
+    profile_column, profile_all_columns, missing_summary,
+    clean_data, get_cleaning_recommendations,
+    run_statistical_test, correlation_matrix, linear_regression,
+    plot_histogram, plot_boxplot, plot_scatter, plot_correlation_heatmap, plot_barplot, create_analysis_plots,
+    execute_python
+]
 executor_llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 executor_prompt = ChatPromptTemplate.from_messages([

@@ -11,6 +11,9 @@ import logging
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv("sandbox settings/secrets.env") # or load_dotenv(".env") depending on where your file is
+
 from agent.state import AgentState
 from agent.graph import app
 
