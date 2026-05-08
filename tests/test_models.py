@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from agent.state import AgentState
-from agent.nodes import ingestion_node, executor, planner_node, replan_node, report_node
+from agent.nodes import ingestion_node, executor, planner_node, replan_node, reporter_node
 
 # -------------------------------------------------------------------
 # Helper: a minimal state fixture
@@ -155,7 +155,7 @@ def test_replan_node_fallback_when_llm_fails(mock_llm, base_state):
 # -------------------------------------------------------------------
 def test_report_node(base_state):
     base_state["step_results"] = ["Step 1: Profiled age", "Step 2: Cleaned data"]
-    result = report_node.report_node(base_state)
+    result = reporter_node.report_node(base_state)
     assert "# Autonomous Data Science Report" in result["final_report"]
     assert "Step 1" in result["final_report"]
     assert os.path.exists("report.md")  # file written

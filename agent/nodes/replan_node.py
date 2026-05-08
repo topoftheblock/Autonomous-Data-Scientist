@@ -1,3 +1,10 @@
+import json
+from langchain_core.prompts import ChatPromptTemplate
+from agent.state import AgentState
+
+# We also need to import the LLM from your planner node so it can generate the new plan
+from agent.nodes.planner_node import planner_llm
+
 replan_prompt = ChatPromptTemplate.from_template("""
 You previously made this plan:
 {plan}

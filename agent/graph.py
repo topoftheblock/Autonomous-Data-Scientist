@@ -1,19 +1,22 @@
 from langgraph.graph import StateGraph, END
+
+# Your imports
 from agent.state import AgentState
 from agent.nodes.ingestion_node import ingestion_node
 from agent.nodes.planner_node import planner_node
 from agent.nodes.execution_step import execute_step
 from agent.nodes.replan_node import replan_node
-from agent.nodes.report_node import reporter_node
+from agent.nodes.reporter_node import reporter_node
 
+# Initialize the graph ONLY ONCE
 graph = StateGraph(AgentState)
-graph.add_node("ingest", ingestion_node)
-# Add nodes
+
+# Add nodes ONLY ONCE
 graph.add_node("ingest", ingestion_node)
 graph.add_node("planner", planner_node)
 graph.add_node("executor", execute_step)
 graph.add_node("replan", replan_node)
-graph.add_node("report", report_node)
+graph.add_node("report", reporter_node)
 
 # Edges
 graph.set_entry_point("ingest")

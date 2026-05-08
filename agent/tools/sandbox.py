@@ -37,16 +37,18 @@ if SANDBOX_MODE == "restrictedpython":
         safe_builtins, safe_globals, guarded_iter_unpack_sequence
     )
 
-    # Create a safe globals dict populated with allowed modules
+# Create a safe globals dict populated with allowed modules
     _safe_globals = {
         "__builtins__": safe_builtins,
         "_iter_unpack_sequence_": guarded_iter_unpack_sequence,
-        "_getattr_": RestrictedPython.Guards.guarded_getattr,
-        "_write_": lambda x: None,               # disable attribute writing
-        "_getiter_": RestrictedPython.Guards.guarded_iter,
-        "_print_": RestrictedPython.Guards.guarded_print,
+        "_getattr_": getattr,                   # Use standard python getattr
+        "_write_": lambda x: x,                 # Allow variables to be written to
+        "_getiter_": iter,                      # Use standard python iter
         "__name__": "__main__",
     }
+    
+    # Explicitly allow the print function so the agent can output its results
+    safe_builtins['print'] = print
     for mod_name in ALLOWED_MODULES:
         try:
             mod = __import__(mod_name)

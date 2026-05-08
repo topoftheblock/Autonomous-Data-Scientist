@@ -4,6 +4,7 @@ Reporter node – compiles the final Markdown report.
 """
 
 import json
+import os
 from agent.state import AgentState
 from agent.tools.reporting import generate_report
 

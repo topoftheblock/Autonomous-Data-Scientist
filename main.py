@@ -9,10 +9,11 @@ Usage:
 import argparse
 import logging
 import sys
+import os  
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv("sandbox settings/secrets.env") # or load_dotenv(".env") depending on where your file is
+load_dotenv()
 
 from agent.state import AgentState
 from agent.graph import app

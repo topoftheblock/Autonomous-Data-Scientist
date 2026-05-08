@@ -33,6 +33,7 @@ DONE
 Followed by a brief summary of what you did."""),
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "Execute the task: {step}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad"),
 ])
 
 def execute_step(state: AgentState) -> AgentState:
