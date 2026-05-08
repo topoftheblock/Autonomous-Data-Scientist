@@ -1,7 +1,13 @@
 from langgraph.graph import StateGraph, END
+from agent.state import AgentState
+from agent.nodes.ingestion_node import ingestion_node
+from agent.nodes.planner_node import planner_node
+from agent.nodes.execution_step import execute_step
+from agent.nodes.replan_node import replan_node
+from agent.nodes.report_node import reporter_node
 
 graph = StateGraph(AgentState)
-
+graph.add_node("ingest", ingestion_node)
 # Add nodes
 graph.add_node("ingest", ingestion_node)
 graph.add_node("planner", planner_node)

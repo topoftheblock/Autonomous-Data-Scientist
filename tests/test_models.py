@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from agent.state import AgentState
-from agent.nodes import ingestion, planner, executor, replan, reporter
+from agent.nodes import ingestion_node, executor, planner_node, replan_node, report_node
 
 # -------------------------------------------------------------------
 # Helper: a minimal state fixture
@@ -38,7 +38,7 @@ def base_state():
 @patch("agent.nodes.ingestion.load_csv")
 def test_ingestion_node(mock_load, base_state):
     mock_load.invoke.return_value = '{"shape": [100,5]}'
-    result = ingestion.ingestion_node(base_state)
+    result = ingestion_node.ingestion_node(base_state)
     assert result["data_summary"] == '{"shape": [100,5]}'
     assert result["plan"] == []
     assert result["current_step_index"] == 0
@@ -58,7 +58,7 @@ def test_planner_node_valid_plan(mock_llm, base_state):
     ])
     mock_llm.invoke.return_value = mock_response
 
-    result = planner.planner_node(base_state)
+    result = planner_node.planner_node(base_state)
     assert len(result["plan"]) == 3
     assert result["current_step_index"] == 0
     assert result["plan"][0] == "Profile column 'age'"
@@ -70,7 +70,7 @@ def test_planner_node_invalid_plan_fallback(mock_llm, base_state):
     mock_response.content = "not a json list"
     mock_llm.invoke.return_value = mock_response
 
-    result = planner.planner_node(base_state)
+    result = planner_node.planner_node(base_state)
     # Should fall back to a hardcoded plan
     assert isinstance(result["plan"], list)
     assert len(result["plan"]) > 0
@@ -132,7 +132,7 @@ def test_replan_node_replaces_failed_step(mock_llm, base_state):
     mock_response.content = json.dumps(["Alternative step", "Generate report"])
     mock_llm.invoke.return_value = mock_response
 
-    result = replan.replan_node(base_state)
+    result = replan_node.replan_node(base_state)
     assert result["error"] == ""
     assert result["plan"] == ["Profile age", "Profile income", "Alternative step", "Generate report"]
     assert base_state["plan"] == ["Profile age", "Profile income", "Alternative step", "Generate report"]
@@ -147,7 +147,7 @@ def test_replan_node_fallback_when_llm_fails(mock_llm, base_state):
     mock_response.content = "garbage"
     mock_llm.invoke.return_value = mock_response
 
-    result = replan.replan_node(base_state)
+    result = replan_node.replan_node(base_state)
     assert "Abort" in result["plan"][-1]
 
 # -------------------------------------------------------------------
@@ -155,7 +155,7 @@ def test_replan_node_fallback_when_llm_fails(mock_llm, base_state):
 # -------------------------------------------------------------------
 def test_report_node(base_state):
     base_state["step_results"] = ["Step 1: Profiled age", "Step 2: Cleaned data"]
-    result = reporter.report_node(base_state)
+    result = report_node.report_node(base_state)
     assert "# Autonomous Data Science Report" in result["final_report"]
     assert "Step 1" in result["final_report"]
     assert os.path.exists("report.md")  # file written
