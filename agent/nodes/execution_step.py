@@ -22,12 +22,14 @@ tools = [
     plot_histogram, plot_boxplot, plot_scatter, plot_correlation_heatmap, plot_barplot, create_analysis_plots,
     execute_python
 ]
-executor_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+executor_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 executor_prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are an autonomous data‑science agent.
+    ("system", """You are an autonomous data-science agent.
 Your current task is: {step}
-You have access to tools for data loading, profiling, cleaning, statistical tests, and plotting.
+The dataset is located at: {file_path}
+You currently have the file path. Do NOT ask for it. Use the load_csv tool immediately.
+**CRITICAL RULE:** NEVER ask the user for input, clarifications, or file paths. Use your tools (like load_csv) to access the data automatically.
 **Important:** After you complete the task, output exactly:
 DONE
 Followed by a brief summary of what you did."""),
@@ -64,8 +66,10 @@ def execute_step(state: AgentState) -> AgentState:
     try:
         result = agent_executor.invoke({
             "step": step,
+            "file_path": state["file_path"],  # <-- Add this line!
             "chat_history": chat_history
         })
+
         output = result["output"]
         # Extract the part after "DONE" as the summary
         if "DONE" in output:

@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 import json
 
-planner_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+planner_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 planner_prompt = ChatPromptTemplate.from_template("""
 You are a senior data scientist. You see ONLY a summary of a dataset (no raw rows).
@@ -28,7 +28,8 @@ def planner_node(state: AgentState) -> AgentState:
     prompt_value = planner_prompt.invoke({"data_summary": state["data_summary"]})
     response = planner_llm.invoke(prompt_value)
     try:
-        plan = json.loads(response.content)
+        clean_content = response.content.replace("```json", "").replace("```", "").strip() 
+        plan = json.loads(clean_content)
         if not isinstance(plan, list):
             raise ValueError("Plan is not a list")
         state["plan"] = plan

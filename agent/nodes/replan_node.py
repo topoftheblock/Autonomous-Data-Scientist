@@ -23,7 +23,10 @@ def replan_node(state: AgentState) -> AgentState:
     """Adapt the remaining plan after a failure."""
     failed_idx = state["current_step_index"]
     failed_step = state["plan"][failed_idx] if failed_idx < len(state["plan"]) else "unknown"
-    history = "\n".join(state["step_results"]) if state["step_results"] else "None"
+    
+    # FIX: Only take the last 5 steps to stay under token limits
+    last_steps = state["step_results"][-5:] 
+    history = "\n".join(last_steps) if last_steps else "None"
 
     prompt_value = replan_prompt.invoke({
         "plan": json.dumps(state["plan"]),
