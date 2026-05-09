@@ -17,6 +17,8 @@ load_dotenv()
 
 from agent.state import AgentState
 from agent.graph import app
+from langgraph.errors import GraphRecursionError
+from agent.nodes.reporter_node import reporter_node
 
 # ---------------------------------------------------------------
 # Logging
@@ -50,7 +52,7 @@ def main():
         "--recursion-limit",
         type=int,
         default=10,
-        help="Maximum number of steps the agent may take (default: 30).",
+        help="Maximum number of steps the agent may take (default: 10).",
     )
     args = parser.parse_args()
 
@@ -76,29 +78,52 @@ def main():
     }
 
     logger.info("Starting autonomous data‑science pipeline …")
+    
+    current_state = initial_state
     try:
-        final_state = app.invoke(initial_state, {"recursion_limit": args.recursion_limit})
+        # Use stream_mode="values" to track the full state as it updates
+        for state in app.stream(initial_state, {"recursion_limit": args.recursion_limit}, stream_mode="values"):
+            current_state = state
+            
+        final_state = current_state
+
+    except GraphRecursionError:
+        logger.warning(f"Recursion limit ({args.recursion_limit}) reached! Compiling partial results...")
+        final_state = current_state
+        
+        # Manually run the reporter node to generate the markdown report with partial results
+        try:
+            report_updates = reporter_node(final_state)
+            final_state["final_report"] = report_updates["final_report"]
+            if "step_results" in report_updates:
+                final_state["step_results"].extend(report_updates["step_results"])
+        except Exception as e:
+            logger.error(f"Failed to generate partial report: {e}")
+
     except Exception as e:
         logger.exception("Pipeline crashed with an unexpected error.")
         sys.exit(1)
 
-    # Check for pipeline‑internal error
-    if final_state.get("error"):
+    # Check for pipeline‑internal error (only exit if there's no partial report available)
+    if final_state.get("error") and not final_state.get("final_report"):
         logger.error(f"Pipeline finished with error: {final_state['error']}")
         sys.exit(1)
 
     # Success → save report
-    report_path = Path(args.output)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(final_state["final_report"], encoding="utf-8")
-    logger.info(f"Report saved to {report_path.resolve()}")
+    if final_state.get("final_report"):
+        report_path = Path(args.output)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(final_state["final_report"], encoding="utf-8")
+        logger.info(f"Report saved to {report_path.resolve()}")
 
-    # Also print the report to stdout for immediate inspection
-    print("\n" + "=" * 80)
-    print("                     AUTONOMOUS DATA SCIENCE REPORT")
-    print("=" * 80)
-    print(final_state["final_report"])
-    print("=" * 80)
+        # Also print the report to stdout for immediate inspection
+        print("\n" + "=" * 80)
+        print("                     AUTONOMOUS DATA SCIENCE REPORT")
+        print("=" * 80)
+        print(final_state["final_report"])
+        print("=" * 80)
+    else:
+        logger.warning("No report was generated.")
 
 
 if __name__ == "__main__":

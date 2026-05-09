@@ -11,7 +11,7 @@ llm:
 
 # ---- Agent Limits ------------------------------------------------------------
 agent:
-  recursion_limit: 10            # Max number of LangGraph steps
+  recursion_limit: 50            # Max number of LangGraph steps
   max_executor_iterations: 10    # Max tool calls per step execution
 
 # ---- Sandbox Settings --------------------------------------------------------
