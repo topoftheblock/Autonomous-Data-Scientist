@@ -73,12 +73,13 @@ def execute_step(state: AgentState) -> AgentState:
         output = result["output"]
         # Extract the part after "DONE" as the summary
         if "DONE" in output:
+            # Extract the part after "DONE" as the summary
             summary = output.split("DONE", 1)[1].strip()
+            state["step_results"].append(f"Step {idx+1} ({step}): {summary}")
+            state["current_step_index"] += 1
+            state["error"] = ""
         else:
-            summary = output
-        state["step_results"].append(f"Step {idx+1} ({step}): {summary}")
-        state["current_step_index"] += 1
-        state["error"] = ""
+            state["error"] = "Agent did not signal completion with DONE."
     except Exception as e:
         state["error"] = f"Step '{step}' failed with: {str(e)}"
     return state
