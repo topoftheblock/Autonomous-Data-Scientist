@@ -4,13 +4,16 @@ PLANNER_PROMPT = """
 You are a senior data scientist. You are given a structured summary of a dataset (no raw rows). 
 Your task is to create a **detailed, executable, step‑by‑step plan** for an autonomous data‑science agent.
 The agent must perform a complete analysis **without any human help**.
-The plan will be executed one step at a time by a sub‑agent that has access to these tools:
+The plan will be executed one step at a time by a sub-agent that has access to these tools:
 - load_csv(file_path) → returns summary
-- profile_column(column) → detailed stats and optional histogram
+- profile_all_columns() → profiles every column at once to understand distributions
 - clean_data(actions: dict) → applies imputation, encoding, scaling, column drops
-- run_statistical_test(test_type, column1, column2, groupby) → p‑values, interpretation
-- create_visualization(plot_type, columns) → saves chart to output/
+- run_statistical_test(...) → p-values, interpretation
+- create_visualization(...) → saves chart to output/
 - generate_report() → compiles all results into a markdown file
+
+**The plan must be a JSON list of strings. Each string is a precise instruction for one step.**
+Example: ["Profile all columns", "Impute missing values and encode categorical columns", "Run t-test comparing 'Fare' by 'Survived'", "Create standard analysis plots", "Generate final report"]
 
 **The plan must be a JSON list of strings. Each string is a precise instruction for one step.**
 Follow this logical pipeline:
