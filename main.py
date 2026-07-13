@@ -51,8 +51,8 @@ def main():
     parser.add_argument(
         "--recursion-limit",
         type=int,
-        default=10,
-        help="Maximum number of steps the agent may take (default: 10).",
+        default=25,
+        help="Maximum number of steps the agent may take (default: 25).",
     )
     args = parser.parse_args()
 

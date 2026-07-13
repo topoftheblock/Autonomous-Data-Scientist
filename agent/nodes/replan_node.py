@@ -1,4 +1,5 @@
 import json
+import logging
 from langchain_core.prompts import ChatPromptTemplate
 from agent.state import AgentState
 
@@ -19,13 +20,15 @@ Now create a **new, corrected plan** only for the remaining tasks (do NOT includ
 Output a JSON list of strings.
 """)
 
-def replan_node(state: AgentState) -> AgentState:
+logger = logging.getLogger("datascience_agent")
+
+def replan_node(state: AgentState) -> dict:
     """Adapt the remaining plan after a failure."""
     failed_idx = state["current_step_index"]
     failed_step = state["plan"][failed_idx] if failed_idx < len(state["plan"]) else "unknown"
-    
-    # FIX: Only take the last 5 steps to stay under token limits
-    last_steps = state["step_results"][-5:] 
+
+    # Only take the last 5 steps to stay under token limits
+    last_steps = state["step_results"][-5:]
     history = "\n".join(last_steps) if last_steps else "None"
 
     prompt_value = replan_prompt.invoke({
@@ -36,13 +39,14 @@ def replan_node(state: AgentState) -> AgentState:
     })
     response = planner_llm.invoke(prompt_value)
     try:
-        new_plan = json.loads(response.content)
+        clean_content = response.content.replace("```json", "").replace("```", "").strip()
+        new_plan = json.loads(clean_content)
         if not isinstance(new_plan, list):
             raise ValueError("Invalid plan format")
         # Replace the tail of the plan after the failed index
-        state["plan"] = state["plan"][:failed_idx] + new_plan
-        state["error"] = ""
-    except Exception:
+        updated_plan = state["plan"][:failed_idx] + new_plan
+    except Exception as e:
+        logger.warning(f"Replan failed to parse LLM response ({e}); raw content: {response.content[:500]!r}")
         # If even replan fails, abort by reducing plan
-        state["plan"] = state["plan"][:failed_idx] + ["Abort and generate report with available results"]
-    return state
+        updated_plan = state["plan"][:failed_idx] + ["Abort and generate report with available results"]
+    return {"plan": updated_plan, "error": ""}

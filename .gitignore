@@ -1,1 +1,16 @@
 .env
+sandbox settings/secrets.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Generated pipeline output
+data/output/
+*.parquet

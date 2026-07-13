@@ -43,8 +43,11 @@ def sample_df():
     return df
 
 @pytest.fixture(autouse=True)
-def setup_global_df(sample_df, tmp_path):
-    """Before each test, initialise io_tools globals with the sample data and a temp parquet path."""
+def setup_global_df(sample_df, tmp_path, monkeypatch):
+    """Before each test, initialise io_tools globals with the sample data and a temp parquet path,
+    and run from a scratch directory so any PNGs written by profiling/visualization tools don't
+    pollute the repo's data/output folder."""
+    monkeypatch.chdir(tmp_path)
     io_tools._DF = sample_df.copy()
     io_tools._PARQUET_PATH = str(tmp_path / "temp.parquet")
     io_tools._DF.to_parquet(io_tools._PARQUET_PATH, index=False)
@@ -57,23 +60,23 @@ class TestIOTools:
         csv_path = tmp_path / "test.csv"
         df = pd.DataFrame({"a": [1,2,3]})
         df.to_csv(csv_path, index=False)
-        result = json.loads(io_tools.load_csv(str(csv_path)))
+        result = json.loads(io_tools.load_csv.invoke({"file_path": str(csv_path)}))
         assert result["shape"] == [3, 1]
         assert result["columns"] == ["a"]
 
     def test_get_data_summary(self):
-        result = json.loads(io_tools.get_data_summary())
+        result = json.loads(io_tools.get_data_summary.invoke({}))
         assert result["shape"] == [6, 7]
         assert "age" in result["columns"]
 
     def test_save_and_reload_dataframe(self, tmp_path):
         new_path = tmp_path / "saved.parquet"
-        result = json.loads(io_tools.save_dataframe(str(new_path)))
+        result = json.loads(io_tools.save_dataframe.invoke({"path": str(new_path)}))
         assert result["shape"] == [6, 7]
 
         # Reload
         io_tools._DF = None
-        result = json.loads(io_tools.reload_dataframe())
+        result = json.loads(io_tools.reload_dataframe.invoke({}))
         assert result["shape"] == [6, 7]
 
 # -------------------------------------------------------------------
@@ -81,26 +84,26 @@ class TestIOTools:
 # -------------------------------------------------------------------
 class TestProfiling:
     def test_profile_numeric_column(self):
-        result = json.loads(profiling.profile_column("age"))
+        result = json.loads(profiling.profile_column.invoke({"col": "age"}))
         assert result["type"] == "numeric"
         assert result["missing"] == 1
-        assert "histogram_png" in result
+        assert "histogram_path" in result
 
     def test_profile_categorical_column(self):
-        result = json.loads(profiling.profile_column("city"))
+        result = json.loads(profiling.profile_column.invoke({"col": "city"}))
         assert result["type"] == "categorical"
-        assert "count_plot_png" in result
+        assert "count_plot_path" in result
 
     def test_profile_missing_column(self):
-        result = json.loads(profiling.profile_column("nonexistent"))
+        result = json.loads(profiling.profile_column.invoke({"col": "nonexistent"}))
         assert "error" in result
 
     def test_profile_all_columns(self):
-        result = json.loads(profiling.profile_all_columns())
+        result = json.loads(profiling.profile_all_columns.invoke({}))
         assert len(result) == 7  # 7 columns
 
     def test_missing_summary(self):
-        result = json.loads(profiling.missing_summary())
+        result = json.loads(profiling.missing_summary.invoke({}))
         assert len(result) == 7
         # "name" has 1 missing
         name_row = [r for r in result if r["column"] == "name"][0]
@@ -112,33 +115,33 @@ class TestProfiling:
 class TestCleaning:
     def test_clean_data_drop_columns(self):
         plan = json.dumps({"drop_columns": ["id", "target"]})
-        result = json.loads(cleaning.clean_data(plan))
+        result = json.loads(cleaning.clean_data.invoke({"actions": plan}))
         assert "id" not in result["columns"]
         assert result["original_shape"] == [6, 7]
         assert result["new_shape"] == [6, 5]
 
     def test_clean_data_fill_na(self):
         plan = json.dumps({"fill_na": {"age": "median", "city": "mode"}})
-        result = json.loads(cleaning.clean_data(plan))
+        result = json.loads(cleaning.clean_data.invoke({"actions": plan}))
         assert result["missing"]["age"] == 0
         assert result["missing"]["city"] == 0
 
     def test_clean_data_encode_onehot(self):
         plan = json.dumps({"encode": {"city": "onehot"}})
-        result = json.loads(cleaning.clean_data(plan))
+        result = json.loads(cleaning.clean_data.invoke({"actions": plan}))
         cols = result["columns"]
         assert "city" not in cols
         assert "city_LA" in cols or "city_NY" in cols
 
     def test_clean_data_scale(self):
         plan = json.dumps({"scale": ["age", "income"]})
-        result = json.loads(cleaning.clean_data(plan))
+        result = json.loads(cleaning.clean_data.invoke({"actions": plan}))
         # After StandardScaler, mean ~0
         df = io_tools._DF
         assert abs(df["age"].mean()) < 1e-6
 
     def test_get_cleaning_recommendations(self):
-        result = json.loads(cleaning.get_cleaning_recommendations())
+        result = json.loads(cleaning.get_cleaning_recommendations.invoke({}))
         assert "fill_na" in result
         assert "encode" in result
 
@@ -147,41 +150,41 @@ class TestCleaning:
 # -------------------------------------------------------------------
 class TestStatistics:
     def test_ttest_ind(self):
-        result = json.loads(statistics.run_statistical_test(
-            test_type="ttest_ind", column1="age", groupby="target"
+        result = json.loads(statistics.run_statistical_test.invoke(
+            {"test_type": "ttest_ind", "column1": "age", "groupby": "target"}
         ))
         assert "p_value" in result
         assert "significant" in result
 
     def test_chi2(self):
-        result = json.loads(statistics.run_statistical_test(
-            test_type="chi2", column1="city", column2="target"
+        result = json.loads(statistics.run_statistical_test.invoke(
+            {"test_type": "chi2", "column1": "city", "column2": "target"}
         ))
         assert result["test"] == "chi2"
 
     def test_pearson_correlation(self):
-        result = json.loads(statistics.run_statistical_test(
-            test_type="pearsonr", column1="age", column2="income"
+        result = json.loads(statistics.run_statistical_test.invoke(
+            {"test_type": "pearsonr", "column1": "age", "column2": "income"}
         ))
         assert -1 <= result["statistic"] <= 1
 
     def test_correlation_matrix(self):
-        result = json.loads(statistics.correlation_matrix(
-            columns="age,income,score", method="pearson"
+        result = json.loads(statistics.correlation_matrix.invoke(
+            {"columns": "age,income,score", "method": "pearson"}
         ))
         assert "matrix" in result
         assert "strong_correlations" in result
 
     def test_linear_regression_single(self):
-        result = json.loads(statistics.linear_regression(
-            target="score", predictors="age"
+        result = json.loads(statistics.linear_regression.invoke(
+            {"target": "score", "predictors": "age"}
         ))
         assert "r_squared" in result
         assert "p_value" in result
 
     def test_invalid_test(self):
-        result = json.loads(statistics.run_statistical_test(
-            test_type="fake_test", column1="age"
+        result = json.loads(statistics.run_statistical_test.invoke(
+            {"test_type": "fake_test", "column1": "age"}
         ))
         assert "error" in result
 
@@ -191,33 +194,33 @@ class TestStatistics:
 class TestVisualization:
     @patch("matplotlib.pyplot.savefig")
     def test_plot_histogram(self, mock_savefig):
-        result = json.loads(visualization.plot_histogram("age"))
+        result = json.loads(visualization.plot_histogram.invoke({"column": "age"}))
         assert "path" in result
         mock_savefig.assert_called_once()
 
     @patch("matplotlib.pyplot.savefig")
     def test_plot_boxplot(self, mock_savefig):
-        result = json.loads(visualization.plot_boxplot("income", by="city"))
+        result = json.loads(visualization.plot_boxplot.invoke({"column": "income", "by": "city"}))
         assert "path" in result
         mock_savefig.assert_called_once()
 
     @patch("matplotlib.pyplot.savefig")
     def test_plot_correlation_heatmap(self, mock_savefig):
-        result = json.loads(visualization.plot_correlation_heatmap(
-            columns="age,income,score"
+        result = json.loads(visualization.plot_correlation_heatmap.invoke(
+            {"columns": "age,income,score"}
         ))
         assert "path" in result
         mock_savefig.assert_called_once()
 
     @patch("matplotlib.pyplot.savefig")
     def test_plot_barplot(self, mock_savefig):
-        result = json.loads(visualization.plot_barplot("city"))
+        result = json.loads(visualization.plot_barplot.invoke({"column": "city"}))
         assert "path" in result
         mock_savefig.assert_called_once()
 
     @patch("matplotlib.pyplot.savefig")
     def test_create_analysis_plots(self, mock_savefig):
-        result = json.loads(visualization.create_analysis_plots())
+        result = json.loads(visualization.create_analysis_plots.invoke({}))
         plots = result["plots"]
         assert len(plots) > 0
         assert all("path" in p for p in plots)
@@ -228,25 +231,25 @@ class TestVisualization:
 class TestSandbox:
     def test_simple_execution(self):
         code = "print(2 + 2)"
-        result = json.loads(sandbox.execute_python(code))
-        assert result["output"] == "4"
+        result = json.loads(sandbox.execute_python.invoke({"code": code}))
+        assert result["output"].strip() == "4"
 
     def test_dataframe_access(self):
         code = """
 import agent.tools.io_tools as io
-df = io._DF
+df = io.get_dataframe()
 print(len(df))
 """
-        result = json.loads(sandbox.execute_python(code))
-        assert result["output"] == "6"
+        result = json.loads(sandbox.execute_python.invoke({"code": code}))
+        assert result["output"].strip() == "6"
 
     def test_timeout(self, monkeypatch):
         monkeypatch.setattr(sandbox, "SANDBOX_TIMEOUT", 1)
         code = "while True: pass"
-        result = json.loads(sandbox.execute_python(code))
+        result = json.loads(sandbox.execute_python.invoke({"code": code}))
         assert "timed out" in result["error"]
 
     def test_forbidden_open(self):
         code = "open('/etc/passwd')"
-        result = json.loads(sandbox.execute_python(code))
+        result = json.loads(sandbox.execute_python.invoke({"code": code}))
         assert "error" in result

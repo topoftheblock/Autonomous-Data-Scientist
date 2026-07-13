@@ -1,8 +1,10 @@
 # Autonomous Data Scientist Agent
 
-A fully hands-off AI agent that acts like a data scientist: it inspects data, cleans it, runs statistical analyses, creates visualizations, and compiles a final Markdown report — all without human intervention.
+A fully hands-off AI agent that acts like a data scientist: it inspects a CSV, cleans it, runs statistical tests, creates visualizations, and compiles a final Markdown report — all without human intervention.
 
-Powered by LLMs (GPT-4o, Claude, or local models) and built with LangGraph, this agent executes a complete data-science pipeline using safe, function-calling tools.
+Built with **LangGraph** + **LangChain** (OpenAI function-calling tools), the agent runs a planner/executor/replanner loop until the analysis is complete, then writes everything to a single report.
+
+**[See a real, unedited run on the Titanic dataset →](examples/titanic_report.md)**
 
 ---
 
@@ -19,35 +21,34 @@ Powered by LLMs (GPT-4o, Claude, or local models) and built with LangGraph, this
 - [Testing](#testing)
 - [Security and Sandboxing](#security-and-sandboxing)
 - [Limitations and Roadmap](#limitations-and-roadmap)
-- [Contributing](#contributing)
 - [License](#license)
 
 ---
 
 ## Features
 
-- **Autonomous end-to-end analysis** — No human input after you provide the CSV file.
-- **Data profiling** — Every column inspected for type, missing values, distributions, and outliers.
-- **Smart cleaning** — Automatic imputation, encoding, scaling, and column dropping based on heuristic rules.
+- **Autonomous end-to-end analysis** — no human input after you provide the CSV file.
+- **Data profiling** — every column inspected for type, missing values, distributions, and outliers.
+- **Smart cleaning** — imputation, one-hot encoding, scaling, and column dropping, driven by the agent's own judgment.
 - **Statistical tests** — t-test, ANOVA, Mann-Whitney, chi-square, Spearman/Pearson correlation, linear regression.
-- **Visualizations** — Histograms, boxplots, scatter plots, bar plots, and correlation heatmaps saved as PNGs.
-- **Self-healing** — If a step fails, the planner re-thinks the remaining tasks without human help.
-- **Report generation** — All findings, test results, and plot references compiled into a clean Markdown report.
-- **Modular and extensible** — Add your own tools, prompt templates, or swap the LLM.
+- **Visualizations** — histograms, boxplots, scatter plots, bar plots, and correlation heatmaps saved as PNGs.
+- **Self-healing** — if a step fails, a replanner rewrites the remaining plan without human help.
+- **Sandboxed code execution** — the agent can also run arbitrary Python via a RestrictedPython sandbox for anything the built-in tools don't cover.
+- **Report generation** — all findings, test results, and plot paths compiled into a Markdown report.
 
 ---
 
 ## Architecture
 
-The agent follows a hierarchical planner-executor pattern inside a LangGraph state machine:
+The agent follows a planner → executor → (replanner) → reporter pattern inside a LangGraph state machine:
 
 ```
 ┌─────────────┐
-│  Ingestion  │  loads CSV → summary + Parquet
+│  Ingestion  │  loads CSV → summary + Parquet snapshot
 └──────┬──────┘
        │
 ┌──────▼──────┐
-│   Planner   │  LLM creates step-by-step plan (JSON list)
+│   Planner   │  LLM creates a step-by-step plan (JSON list)
 └──────┬──────┘
        │
 ┌──────▼──────┐
@@ -57,75 +58,67 @@ The agent follows a hierarchical planner-executor pattern inside a LangGraph sta
 ┌──────▼──────┐   │
 │   Report    │   │  compiles all results → final Markdown
 └─────────────┘   │
-                  │
-           ┌──────┴──────┐
-           │   Replan    │  LLM adjusts remaining plan after failure
-           └─────────────┘
+                   │
+            ┌──────┴──────┐
+            │   Replan    │  LLM adjusts the remaining plan after a failure
+            └─────────────┘
 ```
 
-- **State** (`AgentState`) carries the plan, partial results, and error flags.
-- **Nodes** are Python functions that read and write the state.
-- **Tools** (decorated with `@tool`) are the data-science actions the LLM can call.
+- **State** (`AgentState`, in `agent/state.py`) carries the plan, accumulated step results, and error flags. Fields like `step_results` use LangGraph's `operator.add` reducer, so every node returns a small **partial** update dict rather than mutating and returning the whole state.
+- **Nodes** (`agent/nodes/`) are plain functions that read the state and return updates.
+- **Tools** (`agent/tools/`, decorated with `@tool`) are the data-science actions the executor LLM can call.
 
 ---
 
 ## Project Structure
 
 ```
-data_scientist_agent/
+Autonomous-Data-Scientist/
 ├── agent/
-│   ├── __init__.py
-│   ├── state.py              # TypedDict AgentState
-│   ├── graph.py              # LangGraph assembly & conditional edges
+│   ├── state.py                 # TypedDict AgentState
+│   ├── graph.py                 # LangGraph assembly & conditional edges
 │   ├── nodes/
-│   │   ├── __init__.py
-│   │   ├── ingestion.py      # load CSV and store summary
-│   │   ├── planner.py        # generate plan from summary
-│   │   ├── executor.py       # execute one step (tool-calling agent)
-│   │   ├── replan.py         # error recovery
-│   │   └── reporter.py       # final markdown report
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── io_tools.py       # load_csv, save_dataframe, reload
-│   │   ├── profiling.py      # profile_column, missing_summary
-│   │   ├── cleaning.py       # clean_data, get_cleaning_recommendations
-│   │   ├── statistics.py     # run_statistical_test, correlation_matrix, linear_regression
-│   │   ├── visualization.py  # plot_histogram, boxplot, scatter, heatmap, barplot
-│   │   └── sandbox.py        # safe Python execution (RestrictedPython / Docker)
-│   ├── prompts/
-│   │   ├── planner_prompt.py
-│   │   ├── executor_prompt.py
-│   │   └── replan_prompt.py
-│   └── utils/
-│       └── logging_config.py
+│   │   ├── ingestion_node.py    # load CSV, store summary
+│   │   ├── planner_node.py      # generate plan from summary
+│   │   ├── execution_step.py    # execute one step (tool-calling agent)
+│   │   ├── replan_node.py       # error recovery
+│   │   └── reporter_node.py     # final markdown report
+│   └── tools/
+│       ├── io_tools.py          # load_csv, save_dataframe, reload, get_dataframe
+│       ├── profiling.py         # profile_column, profile_all_columns, missing_summary
+│       ├── cleaning.py          # clean_data, get_cleaning_recommendations
+│       ├── statistics.py        # run_statistical_test, correlation_matrix, linear_regression
+│       ├── visualization.py     # plot_histogram, boxplot, scatter, heatmap, barplot
+│       └── sandbox.py           # sandboxed arbitrary Python execution (RestrictedPython)
 ├── config/
-│   └── config.yaml           # model name, temperature, max iterations, etc.
+│   └── config.yaml              # documents the tunable parameters (see Configuration below)
 ├── data/
-│   ├── input/                # drop your CSVs here
-│   └── output/               # reports and plots appear here
+│   ├── input/                   # sample CSVs (e.g. titanic.csv)
+│   └── output/                  # reports and plots land here (gitignored)
+├── examples/
+│   └── titanic_report.md        # a real, unedited run against data/input/titanic.csv
 ├── tests/
-│   ├── test_tools.py
-│   ├── test_nodes.py
-│   └── test_graph.py
-├── notebooks/
-│   └── exploration.ipynb     # manual testing playground
-├── main.py                   # entry point
-├── requirements.txt
-└── README.md
+│   ├── test_tools.py            # every tool, against a small synthetic DataFrame
+│   ├── test_models.py           # planner/executor/replan/reporter node logic (mocked LLM)
+│   └── test_graph.py            # full graph integration, including the replan path (mocked LLM)
+├── notebook/
+│   └── exploration.ipynb        # manual scratchpad
+├── main.py                      # CLI entry point
+└── requirements.txt
 ```
 
 ---
 
 ## Installation
 
-1. **Clone the repository**
+1. **Clone the repository and enter it**
 
    ```bash
-   git clone https://github.com/your-org/autonomous-datascientist.git
-   cd autonomous-datascientist
+   git clone <your-fork-url>
+   cd Autonomous-Data-Scientist
    ```
 
-2. **Create a virtual environment** (recommended)
+2. **Create a virtual environment**
 
    ```bash
    python -m venv .venv
@@ -139,13 +132,16 @@ data_scientist_agent/
    pip install -r requirements.txt
    ```
 
+   Requires Python 3.10+. On Linux/macOS the sandbox uses `fork()`-based
+   multiprocessing to enforce timeouts; this doesn't work on Windows, so the
+   sandbox tool (`execute_python`) is best-effort there.
+
 4. **Set your API key**
 
    ```bash
    export OPENAI_API_KEY="sk-..."
+   # or put it in a .env file — main.py loads it automatically via python-dotenv
    ```
-
-   For other LLMs, adjust `agent/graph.py` and `config/config.yaml` accordingly.
 
 ---
 
@@ -157,151 +153,127 @@ data_scientist_agent/
 python main.py data/input/titanic.csv
 ```
 
-This will create `data/output/report.md` and any plots in `data/output/`.
+This creates `data/output/report.md` plus any plots the agent generated, and also prints the report to stdout.
 
-**Custom output path and recursion limit**
+**Custom output path and step budget**
 
 ```bash
-python main.py data/input/sales.csv --output reports/sales_analysis.md --recursion-limit 50
+python main.py data/input/sales.csv --output reports/sales_analysis.md --recursion-limit 40
 ```
 
-**Example console output**
-
-```
-================================================================================
-                     AUTONOMOUS DATA SCIENCE REPORT
-================================================================================
-# Autonomous Data Science Report
-
-## Execution Log
-
-### Step 1
-Profiled column 'age': numeric, missing 19.8%, mean=29.7, histogram saved.
-
-### Step 2
-Cleaned data: filled 'age' with median, dropped 'Cabin', one-hot encoded 'Sex'.
-
-... (further steps)
-
-## Statistical Tests
-- t-test (Survived vs Age): p=0.032 → significant
-- Chi-square (Sex vs Survived): p<0.001 → significant
-
-## Visualizations
-![Age distribution](data/output/histogram_age.png)
-...
-================================================================================
-```
-
-The agent runs entirely on its own — you only wait for the final report.
+`--recursion-limit` caps how many plan steps (including replans) the LangGraph
+run may take before it stops and compiles whatever results it has so far —
+see [`examples/titanic_report.md`](examples/titanic_report.md) for a complete
+real run (profiling → cleaning → two statistical tests → two plots → report).
 
 ---
 
 ## Configuration
 
-All tunable parameters live in `config/config.yaml` or as environment variables.
+Most run-time knobs are plain Python constants or environment variables read directly by the tool modules — `config/config.yaml` documents the same values as a single reference point, but nothing in the code parses that file yet (see Roadmap).
 
-| Parameter | Default | Description |
+| Parameter | Where it lives | Default |
 |---|---|---|
-| `model_name` | `gpt-4o` | LLM model for planner and executor |
-| `temperature` | `0.0` | Determinism (0 = completely deterministic) |
-| `max_executor_iterations` | `10` | Max tool calls per step |
-| `recursion_limit` | `30` | Max LangGraph steps |
-| `sandbox_mode` | `restrictedpython` | `restrictedpython` or `docker` |
-| `sandbox_timeout` | `30` | Seconds allowed for arbitrary code |
-| `allowed_modules` | `pandas,numpy,...` | Modules available inside the sandbox |
+| LLM model | `ChatOpenAI(model=...)` in `planner_node.py` / `execution_step.py` | `gpt-4o-mini` |
+| `--recursion-limit` | CLI flag / `main.py` | `25` |
+| Executor `max_iterations` | `execution_step.py` | `10` |
+| `SANDBOX_MODE` | env var, `sandbox.py` | `restrictedpython` |
+| `SANDBOX_TIMEOUT` | env var, `sandbox.py` | `30` seconds |
+| `SANDBOX_ALLOWED_MODULES` | env var, `sandbox.py` | `pandas,numpy,matplotlib,seaborn,scipy,sklearn,json,csv,datetime,math,statistics` |
 
-Environment variables override the config file. The most important one is `OPENAI_API_KEY`.
+The most important environment variable is `OPENAI_API_KEY`.
 
 ---
 
 ## How It Works
 
-1. **Ingestion** — `main.py` loads the CSV, saves a Parquet snapshot, and creates a structured summary (shape, dtypes, missing counts).
-2. **Planning** — The Planner LLM sees only the summary and writes a detailed JSON plan: "Profile column 'age'", "Impute missing 'age' with median", "Run t-test comparing 'fare' by 'pclass'", and so on.
-3. **Step Execution (looping)** — The Executor receives one step at a time. It has access to all tools (`profile_column`, `clean_data`, `run_statistical_test`, etc.) and may call several to finish the task. After completion it signals `DONE` with a human-readable summary.
-4. **Replanning** — If a step fails (e.g., column not found, inappropriate test), the Replan LLM modifies the remaining plan.
-5. **Reporting** — When all steps are done, the Reporter compiles all step summaries into a Markdown file with embedded plot references.
+1. **Ingestion** — `ingestion_node` loads the CSV, saves a Parquet snapshot, and builds a structured JSON summary (shape, dtypes, missing counts, a small head sample) — never the raw rows.
+2. **Planning** — `planner_node` sees only that summary and writes a short JSON plan (aims for 8-12 steps): profile, clean, run at least two statistical tests, create at least two plots, generate the report.
+3. **Step execution (looping)** — `execution_step` hands one step at a time to a tool-calling agent with access to all tools. It signals `DONE` plus a short summary when finished; that summary (not the raw tool output) becomes the step's entry in `step_results` and is what subsequent steps see as history.
+4. **Replanning** — if a step raises an exception, `replan_node` asks the LLM to rewrite the remaining plan; if that itself fails to parse, it falls back to an "abort and report with available results" step so the pipeline always terminates with *something*.
+5. **Reporting** — `reporter_node` compiles every step's summary, the cleaning/statistics/plot metadata, and writes the final Markdown file.
 
-No human is involved after pressing Enter.
+If the LangGraph step budget (`--recursion-limit`) is hit before reaching the report step, `main.py` catches the resulting `GraphRecursionError` and runs the reporter manually against whatever was accomplished, so a run never dies with nothing to show for it.
 
 ---
 
 ## Tools Reference
 
-### I/O
+### I/O (`agent/tools/io_tools.py`)
 
 | Tool | Description |
 |---|---|
-| `load_csv(file_path)` | Load CSV, return summary, save Parquet |
-| `get_data_summary()` | Quick overview of current DataFrame |
-| `save_dataframe(path)` | Persist cleaned data |
-| `reload_dataframe()` | Reload from last saved Parquet |
+| `load_csv(file_path)` | Load a CSV, return a summary, save a Parquet snapshot |
+| `get_data_summary()` | Quick overview of the currently loaded DataFrame |
+| `save_dataframe(path)` | Persist the current DataFrame to Parquet |
+| `reload_dataframe()` | Reload from the last saved Parquet path |
+| `get_dataframe()` | Plain Python accessor (not an LLM tool) used by sandboxed code — `df._DF` would be blocked by RestrictedPython's underscore-attribute guard |
 
-### Profiling
-
-| Tool | Description |
-|---|---|
-| `profile_column(col)` | Detailed stats and base64 histogram / count plot |
-| `profile_all_columns()` | Profiles every column at once |
-| `missing_summary()` | Table of missing values per column |
-
-### Cleaning
+### Profiling (`agent/tools/profiling.py`)
 
 | Tool | Description |
 |---|---|
-| `clean_data(actions)` | Apply a JSON cleaning plan (drop, fill, encode, scale) |
-| `get_cleaning_recommendations()` | Heuristic cleaning suggestions |
+| `profile_column(col)` | Type, missing %, quantiles/skew (numeric) or top values (categorical); saves a plot PNG and returns its path |
+| `profile_all_columns()` | Runs `profile_column` over every column |
+| `missing_summary()` | Table of missing counts/percentages per column |
 
-### Statistics
-
-| Tool | Description |
-|---|---|
-| `run_statistical_test(...)` | t-test, ANOVA, chi-square, Mann-Whitney, correlation |
-| `correlation_matrix(...)` | Matrix and strong correlation list |
-| `linear_regression(target, predictors)` | scipy-based regression |
-
-### Visualization
+### Cleaning (`agent/tools/cleaning.py`)
 
 | Tool | Description |
 |---|---|
-| `plot_histogram(col)` | Save histogram PNG |
+| `clean_data(actions)` | Apply a JSON cleaning plan: `drop_columns`, `fill_na`, `encode`, `scale` |
+| `get_cleaning_recommendations()` | Heuristic suggestions based on missingness/cardinality |
+
+### Statistics (`agent/tools/statistics.py`)
+
+| Tool | Description |
+|---|---|
+| `run_statistical_test(...)` | t-test, ANOVA, Mann-Whitney, chi-square, Pearson/Spearman correlation |
+| `correlation_matrix(...)` | Full matrix plus a list of strong correlations |
+| `linear_regression(target, predictors)` | Simple/multiple linear regression via scipy/sklearn |
+
+### Visualization (`agent/tools/visualization.py`)
+
+| Tool | Description |
+|---|---|
+| `plot_histogram(col)` | Histogram + KDE, saved as PNG |
 | `plot_boxplot(col, by)` | Boxplot, optionally grouped |
 | `plot_scatter(x, y, hue)` | Scatter plot |
-| `plot_correlation_heatmap(cols)` | Annotated heatmap |
-| `plot_barplot(col, top_n)` | Top-N categories bar chart |
-| `create_analysis_plots(cols)` | Auto-generate all standard plots |
+| `plot_correlation_heatmap(cols)` | Annotated correlation heatmap |
+| `plot_barplot(col, top_n)` | Top-N category bar chart |
+| `create_analysis_plots(cols)` | Generates the standard set of plots in one call |
 
-### Sandbox
+### Sandbox (`agent/tools/sandbox.py`)
 
 | Tool | Description |
 |---|---|
-| `execute_python(code)` | Run arbitrary (safe) Python in a sandbox |
+| `execute_python(code)` | Runs arbitrary Python under RestrictedPython, with a guarded `import` allow-list and a hard timeout; use `agent.tools.io_tools.get_dataframe()` to reach the current DataFrame |
 
 ---
 
 ## Testing
 
-The test suite covers all tools and the full graph logic (using mocked LLMs). Run it with:
+The test suite covers every tool plus the full graph logic (LLM calls mocked, so no API key is needed):
 
 ```bash
+pip install pytest
 pytest tests/ -v
 ```
 
-- `test_tools.py` — Validates every tool against a sample DataFrame.
-- `test_nodes.py` — Checks planner, executor, replan, and reporter behaviour.
-- `test_graph.py` — End-to-end integration with a real CSV and mocked LLMs.
+- `test_tools.py` — every tool against a small synthetic DataFrame, including the RestrictedPython sandbox (import allow-listing, `df['col']` indexing, timeouts, forbidden builtins).
+- `test_models.py` — planner/executor/replan/reporter node behavior in isolation.
+- `test_graph.py` — full graph integration on a real tiny CSV, including the failure → replan → recovery path.
 
-Tests are isolated and do not require an API key.
+All 40 tests pass as of this writing.
 
 ---
 
 ## Security and Sandboxing
 
-- **No raw data exposure** — The LLM sees only aggregated summaries, never individual rows.
-- **Restricted Python** — The `execute_python` sandbox uses RestrictedPython to disable dangerous builtins (`open`, `exec`, `eval`, `__import__`, etc.).
-- **Timeout** — Arbitrary code is killed after `sandbox_timeout` seconds.
-- **Docker isolation (optional)** — Set `SANDBOX_MODE=docker` to run code in a container with no network access and limited resources.
+- **No raw data exposure** — the LLM only ever sees aggregated summaries and small samples, never the full dataset.
+- **Restricted Python** — `execute_python` compiles code with RestrictedPython, which strips dangerous builtins (`open`, `eval`, raw `__import__`, underscore-attribute access) and requires explicit guards for attribute/item access, iteration, and in-place operators (all wired up in `sandbox.py`). A custom guarded `__import__` only allows the modules already on the allow-list.
+- **Timeout** — sandboxed code runs in a forked subprocess and is killed after `SANDBOX_TIMEOUT` seconds.
+- **Docker isolation (not yet implemented)** — `SANDBOX_MODE=docker` is a documented but unimplemented stub in `sandbox.py`; the default `restrictedpython` mode is what's actually enforced today.
 
 ---
 
@@ -309,32 +281,21 @@ Tests are isolated and do not require an API key.
 
 **Current limitations**
 
-- **Domain knowledge** — The agent applies generic data-science heuristics; it does not understand industry-specific nuances unless injected into the prompts.
-- **Visualization interpretation** — The LLM sees only base64-encoded plots (in profiling) or file paths (final report); it does not visually interpret images.
-- **Large datasets** — All data is kept in memory; for big data, add sampling or incremental processing.
-- **Multi-file support** — Currently only a single CSV or Excel file is handled.
+- **`config/config.yaml` isn't wired up yet** — it documents intended settings, but the code currently reads model names/timeouts from constants and environment variables instead.
+- **Step budget vs. plan length** — very wide datasets (many columns) can eat the step budget on profiling alone if the planner doesn't batch; the planner prompt asks for 8-12 steps and batched profiling, but isn't guaranteed to comply. Raise `--recursion-limit` for larger datasets.
+- **Large datasets** — everything is held in memory (pandas); there's no sampling or chunked processing for big files.
+- **Single file at a time** — no multi-table joins or multi-file ingestion.
+- **No visual inspection of plots** — the LLM sees file paths for generated plots, not the pixels, so it can't visually critique a chart it just made.
 
-**Planned improvements**
+**Possible next steps**
 
-- LLM-driven feature engineering
-- Time-series analysis support
-- Docker-based sandbox integration
-- Web UI (Streamlit) for starting runs interactively
-
----
-
-## Contributing
-
-Contributions are welcome. Please open an issue to discuss what you would like to change, or submit a pull request directly.
-
-Before submitting a PR, make sure tests pass:
-
-```bash
-pytest tests/ -v
-```
+- Wire `config/config.yaml` into the nodes/tools instead of hardcoded constants.
+- Implement the Docker sandbox mode for stronger isolation than RestrictedPython.
+- LLM-driven feature engineering and time-series support.
+- A small web UI for kicking off runs and browsing reports.
 
 ---
 
 ## License
 
-MIT License. See `LICENSE` for details.
+MIT — see [LICENSE](LICENSE).

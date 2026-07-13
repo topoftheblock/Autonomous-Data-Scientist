@@ -7,8 +7,8 @@ Each tool returns a structured JSON summary (and optionally a base64 plot).
 import pandas as pd
 import numpy as np
 import json
-import io
-import base64
+import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 from langchain.tools import tool
@@ -20,22 +20,28 @@ from langchain.tools import tool
 # ------------------------------------------------------------
 from agent.tools import io_tools
 
-# ------------------------------------------------------------
-# Helper: generate a PNG histogram as a base64 string
-# ------------------------------------------------------------
+# Plots are saved to disk and referenced by path rather than embedded as
+# base64 in the tool response — inlining image bytes blows up the LLM's
+# context window (a handful of profiled columns is enough to exceed 128k
+# tokens) for data the model never needs to see pixel-for-pixel.
+OUTPUT_DIR = "data/output"
+
+def _ensure_output_dir():
+    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+
 def _numeric_plot(col_data: pd.Series, col_name: str) -> str:
-    """Return a base64‑encoded PNG of a KDE+histogram plot for a numeric column."""
+    """Save a KDE+histogram plot for a numeric column and return its file path."""
+    _ensure_output_dir()
     fig, ax = plt.subplots(figsize=(6, 4))
     sns.histplot(col_data.dropna(), kde=True, ax=ax)
     ax.set_title(f"Distribution of {col_name}")
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=80)
+    file_path = os.path.join(OUTPUT_DIR, f"profile_hist_{col_name}.png")
+    fig.savefig(file_path, dpi=80)
     plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+    return file_path
 
 def _categorical_plot(col_data: pd.Series, col_name: str, top_n: int = 15) -> str:
-    """Return a base64‑encoded PNG of a count plot for a categorical column."""
+    """Save a count plot for a categorical column and return its file path."""
     value_counts = col_data.value_counts()
     if len(value_counts) > top_n:
         # Keep top categories and group the rest
@@ -45,16 +51,16 @@ def _categorical_plot(col_data: pd.Series, col_name: str, top_n: int = 15) -> st
     else:
         plot_data = value_counts
 
+    _ensure_output_dir()
     fig, ax = plt.subplots(figsize=(max(6, len(plot_data)*0.4), 4))
     sns.barplot(x=plot_data.index, y=plot_data.values, ax=ax)
     ax.set_title(f"Frequency of {col_name}")
     ax.tick_params(axis="x", rotation=45)
     plt.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=80)
+    file_path = os.path.join(OUTPUT_DIR, f"profile_count_{col_name}.png")
+    fig.savefig(file_path, dpi=80)
     plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+    return file_path
 
 # ------------------------------------------------------------
 # Tools
@@ -64,8 +70,8 @@ def profile_column(col: str) -> str:
     """
     Generate a detailed profile of a single column:
     - dtype, missing count, unique count, skew (if numeric)
-    - for numeric: quantiles, mean, std, histogram (base64)
-    - for categorical/object: top values, frequencies, count‑plot (base64)
+    - for numeric: quantiles, mean, std, histogram (saved as PNG, path returned)
+    - for categorical/object: top values, frequencies, count‑plot (saved as PNG, path returned)
     Use this to understand each column before cleaning or testing.
     """
     df = io_tools._DF
@@ -102,7 +108,7 @@ def profile_column(col: str) -> str:
             "max": round(col_data.max(), 4),
             "skew": round(col_data.skew(), 4),
         }
-        profile["histogram_png"] = _numeric_plot(col_data, col)
+        profile["histogram_path"] = _numeric_plot(col_data, col)
 
     # Categorical, object, low cardinality numeric
     else:
@@ -110,7 +116,7 @@ def profile_column(col: str) -> str:
         value_counts = col_data.value_counts().to_dict()
         # Stringify keys in case they are non‑serializable
         profile["value_counts"] = {str(k): v for k, v in list(value_counts.items())[:20]}
-        profile["count_plot_png"] = _categorical_plot(col_data, col)
+        profile["count_plot_path"] = _categorical_plot(col_data, col)
 
     return json.dumps(profile, indent=2, default=str)
 

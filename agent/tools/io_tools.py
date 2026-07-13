@@ -37,6 +37,11 @@ def _df_to_summary(df: pd.DataFrame) -> str:
     summary["info"] = info_str
     return json.dumps(summary, indent=2, default=str)
 
+def get_dataframe() -> pd.DataFrame:
+    """Public accessor for the currently loaded DataFrame (safe for sandboxed code —
+    RestrictedPython forbids reading underscore-prefixed attributes like `_DF` directly)."""
+    return _DF
+
 # -------------------------------------------------------------------
 # Tools
 # -------------------------------------------------------------------

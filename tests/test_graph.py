@@ -38,15 +38,16 @@ def sample_csv():
     })
     with tempfile.NamedTemporaryFile(suffix=".csv", mode="w", delete=False) as f:
         df.to_csv(f, index=False)
-        yield f.name
+    yield f.name
     os.unlink(f.name)   # cleanup
 
 # ---------------------------------------------------------------
 # Test the whole graph with mocked LLMs
 # ---------------------------------------------------------------
-@patch("agent.nodes.executor.AgentExecutor")
-@patch("agent.nodes.planner.planner_llm")
-def test_full_pipeline(mock_planner_llm, mock_agent_executor_cls, sample_csv):
+@patch("agent.nodes.execution_step.AgentExecutor")
+@patch("agent.nodes.planner_node.planner_llm")
+def test_full_pipeline(mock_planner_llm, mock_agent_executor_cls, sample_csv, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     # ---- Mock planner LLM -------------------------------------------------
     mock_response = MagicMock()
     mock_response.content = json.dumps([
@@ -96,8 +97,8 @@ def test_full_pipeline(mock_planner_llm, mock_agent_executor_cls, sample_csv):
     # Plan was set
     assert len(final_state["plan"]) == 4
 
-    # All steps executed (4 step results expected)
-    assert len(final_state["step_results"]) == 4
+    # All 4 plan steps executed, plus one entry logged by the reporter itself
+    assert len(final_state["step_results"]) == 5
 
     # Each step result contains the summary
     assert "Profiled age" in final_state["step_results"][0]
@@ -106,7 +107,7 @@ def test_full_pipeline(mock_planner_llm, mock_agent_executor_cls, sample_csv):
     assert "Generated final report" in final_state["step_results"][3]
 
     # Final report exists and contains step results
-    assert "# Autonomous Data Science Report" in final_state["final_report"]
+    assert "# Data Science Report" in final_state["final_report"]
     assert "Step 1" in final_state["final_report"]
     assert "Profiled age" in final_state["final_report"]
 
@@ -121,10 +122,11 @@ def test_full_pipeline(mock_planner_llm, mock_agent_executor_cls, sample_csv):
 # ---------------------------------------------------------------
 # Test error recovery (replan) path
 # ---------------------------------------------------------------
-@patch("agent.nodes.executor.AgentExecutor")
-@patch("agent.nodes.replan.planner_llm")
-@patch("agent.nodes.planner.planner_llm")
-def test_error_replan_flow(mock_init_planner, mock_replan_llm, mock_executor_cls, sample_csv):
+@patch("agent.nodes.execution_step.AgentExecutor")
+@patch("agent.nodes.replan_node.planner_llm")
+@patch("agent.nodes.planner_node.planner_llm")
+def test_error_replan_flow(mock_init_planner, mock_replan_llm, mock_executor_cls, sample_csv, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     # Initial planner returns a plan that will fail on step 2
     mock_response = MagicMock()
     mock_response.content = json.dumps([
@@ -134,19 +136,15 @@ def test_error_replan_flow(mock_init_planner, mock_replan_llm, mock_executor_cls
     ])
     mock_init_planner.invoke.return_value = mock_response
 
-    # Executor mocks: step 1 succeeds, step 2 fails
-    step1 = {"output": "DONE\nProfiled age."}
-    step2_exception = Exception("Tool broken")
+    # Executor mocks: 1st call succeeds, 2nd call fails, subsequent calls (post-replan) succeed
+    call_count = {"n": 0}
 
-    exec_instances = []
     class FakeExecutor:
-        def __init__(self, *args, **kwargs):
-            exec_instances.append(self)
         def invoke(self, *args, **kwargs):
-            if len(exec_instances) == 1:   # first call -> step 1
-                return step1
-            else:                          # second call -> step 2
-                raise step2_exception
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise Exception("Tool broken")
+            return {"output": f"DONE\nStep {call_count['n']} done."}
 
     mock_executor_cls.side_effect = lambda *a, **kw: FakeExecutor()
 
@@ -175,7 +173,7 @@ def test_error_replan_flow(mock_init_planner, mock_replan_llm, mock_executor_cls
     # At least 1 step succeeded, then replanned steps executed
     assert len(final_state["step_results"]) >= 2
     # Final report present
-    assert "report" in final_state
+    assert "# Data Science Report" in final_state["final_report"]
 
     # Cleanup
     if os.path.exists("report.md"):
